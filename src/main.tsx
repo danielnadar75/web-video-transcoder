@@ -4,6 +4,12 @@ import './index.css'
 import App from './App'
 import Playground from './Playground'
 
+pendo.initialize({
+  visitor: {
+    id: ''
+  }
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
