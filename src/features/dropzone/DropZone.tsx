@@ -2,7 +2,7 @@ import { useCallback, useState, type DragEvent } from 'react'
 import { Upload, FileVideo } from 'lucide-react'
 
 interface DropZoneProps {
-  onFile: (file: File) => void
+  onFile: (file: File, importMethod: string) => void
   disabled?: boolean
 }
 
@@ -32,7 +32,7 @@ export function DropZone({ onFile, disabled }: DropZoneProps) {
 
       const file = e.dataTransfer.files[0]
       if (file && isAccepted(file)) {
-        onFile(file)
+        onFile(file, 'drag_and_drop')
       }
     },
     [onFile, disabled],
@@ -54,7 +54,7 @@ export function DropZone({ onFile, disabled }: DropZoneProps) {
     input.accept = '.mkv,.mp4,.webm,.mov,.avi,.mpg,.mpeg,.ts'
     input.onchange = () => {
       const file = input.files?.[0]
-      if (file) onFile(file)
+      if (file) onFile(file, 'file_picker')
     }
     input.click()
   }, [onFile, disabled])
