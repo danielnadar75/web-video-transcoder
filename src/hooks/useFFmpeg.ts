@@ -15,6 +15,7 @@ export function useFFmpeg() {
     if (ffmpegRef.current && loaded) return
     setLoading(true)
 
+    const startTime = performance.now()
     const ffmpeg = new FFmpeg()
     ffmpegRef.current = ffmpeg
 
@@ -22,6 +23,14 @@ export function useFFmpeg() {
       coreURL: await toBlobURL(`${BASE_URL}/ffmpeg-core.js`, 'text/javascript'),
       wasmURL: await toBlobURL(`${BASE_URL}/ffmpeg-core.wasm`, 'application/wasm'),
     })
+
+    const loadTimeMs = Math.round(performance.now() - startTime)
+
+    if (typeof pendo !== 'undefined') {
+      pendo.track('ffmpeg_wasm_loaded', {
+        loadTimeMs,
+      })
+    }
 
     setLoaded(true)
     setLoading(false)

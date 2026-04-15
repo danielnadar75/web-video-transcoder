@@ -13,9 +13,18 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null)
 
   const handleFile = useCallback(
-    async (droppedFile: File) => {
+    async (droppedFile: File, importMethod: string) => {
       try {
         setFile(droppedFile)
+
+        if (typeof pendo !== 'undefined') {
+          pendo.track('video_file_imported', {
+            fileName: droppedFile.name,
+            fileSize: droppedFile.size,
+            fileType: droppedFile.type || 'unknown',
+            importMethod,
+          })
+        }
 
         if (!loaded) {
           setState({ step: 'loading-ffmpeg' })
@@ -26,16 +35,49 @@ export default function App() {
         const parsed = await probe(droppedFile)
 
         if (parsed.length === 0) {
+          if (typeof pendo !== 'undefined') {
+            pendo.track('video_probe_failed', {
+              fileName: droppedFile.name,
+              fileSize: droppedFile.size,
+              fileType: droppedFile.type || 'unknown',
+              errorMessage: 'No streams detected',
+            })
+          }
           setState({ step: 'error', message: 'No streams found in this file. Is it a valid video?' })
           return
+        }
+
+        const videoCount = parsed.filter((s) => s.codec_type === 'video').length
+        const audioCount = parsed.filter((s) => s.codec_type === 'audio').length
+        const subtitleCount = parsed.filter((s) => s.codec_type === 'subtitle').length
+
+        if (typeof pendo !== 'undefined') {
+          pendo.track('video_probe_completed', {
+            fileName: droppedFile.name,
+            fileSize: droppedFile.size,
+            videoTrackCount: videoCount,
+            audioTrackCount: audioCount,
+            subtitleTrackCount: subtitleCount,
+            totalStreamCount: parsed.length,
+            codecs: parsed.map((s) => s.codec_name).join(','),
+          })
         }
 
         setStreams(parsed)
         setState({ step: 'selecting', fileName: droppedFile.name, streams: parsed })
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to analyze file'
+        if (typeof pendo !== 'undefined') {
+          pendo.track('video_probe_failed', {
+            fileName: droppedFile.name,
+            fileSize: droppedFile.size,
+            fileType: droppedFile.type || 'unknown',
+            errorMessage,
+          })
+        }
         setState({
           step: 'error',
-          message: err instanceof Error ? err.message : 'Failed to analyze file',
+          message: errorMessage,
         })
       }
     },
@@ -54,6 +96,26 @@ export default function App() {
     const keptStreams = streams.filter((s) => s.kept)
     if (keptStreams.length === 0) return
 
+    const removedStreams = streams.filter((s) => !s.kept)
+    const countByType = (list: typeof streams, type: string) =>
+      list.filter((s) => s.codec_type === type).length
+
+    if (typeof pendo !== 'undefined') {
+      pendo.track('remux_submitted', {
+        fileName: file.name,
+        fileSize: file.size,
+        totalStreamCount: streams.length,
+        keptStreamCount: keptStreams.length,
+        removedStreamCount: removedStreams.length,
+        keptVideoCount: countByType(keptStreams, 'video'),
+        keptAudioCount: countByType(keptStreams, 'audio'),
+        keptSubtitleCount: countByType(keptStreams, 'subtitle'),
+        removedVideoCount: countByType(removedStreams, 'video'),
+        removedAudioCount: countByType(removedStreams, 'audio'),
+        removedSubtitleCount: countByType(removedStreams, 'subtitle'),
+      })
+    }
+
     try {
       setState({ step: 'processing', fileName: file.name, progress: 0 })
 
@@ -65,20 +127,50 @@ export default function App() {
 
       setState({ step: 'done', fileName: file.name, outputUrl: url })
 
+      const outputFileName = file.name.replace(/(\.[^.]+)$/, '_cleaned$1')
+
+      if (typeof pendo !== 'undefined') {
+        pendo.track('remux_completed', {
+          fileName: file.name,
+          fileSize: file.size,
+          outputFileName,
+          keptStreamCount: keptStreams.length,
+          removedStreamCount: removedStreams.length,
+          totalStreamCount: streams.length,
+        })
+      }
+
       // Auto-download
       const a = document.createElement('a')
       a.href = url
-      a.download = file.name.replace(/(\.[^.]+)$/, '_cleaned$1')
+      a.download = outputFileName
       a.click()
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Remux failed'
+      if (typeof pendo !== 'undefined') {
+        pendo.track('remux_failed', {
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || 'unknown',
+          keptStreamCount: keptStreams.length,
+          removedStreamCount: removedStreams.length,
+          errorMessage,
+        })
+      }
       setState({
         step: 'error',
-        message: err instanceof Error ? err.message : 'Remux failed',
+        message: errorMessage,
       })
     }
   }, [file, streams, remux])
 
   const handleReset = useCallback(() => {
+    if (typeof pendo !== 'undefined') {
+      pendo.track('workflow_restarted', {
+        previousStep: state.step,
+        previousFileName: 'fileName' in state ? state.fileName : undefined,
+      })
+    }
     if (state.step === 'done' && 'outputUrl' in state) {
       URL.revokeObjectURL(state.outputUrl)
     }
@@ -188,6 +280,14 @@ export default function App() {
                 <a
                   href={state.outputUrl}
                   download={file?.name.replace(/(\.[^.]+)$/, '_cleaned$1')}
+                  onClick={() => {
+                    if (typeof pendo !== 'undefined') {
+                      pendo.track('output_file_downloaded', {
+                        fileName: file?.name,
+                        outputFileName: file?.name.replace(/(\.[^.]+)$/, '_cleaned$1'),
+                      })
+                    }
+                  }}
                   className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
                 >
                   <Download size={16} />
