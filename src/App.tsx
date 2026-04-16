@@ -1,15 +1,16 @@
 import { useCallback, useState } from 'react'
-import { Scissors, Download, RotateCcw } from 'lucide-react'
+import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo } from 'lucide-react'
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
 import { useFFmpeg } from './hooks/useFFmpeg'
-import type { AppState, MediaStreamInfo } from './types/media'
+import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
 
 export default function App() {
   const { load, loaded, loading, probe, remux } = useFFmpeg()
   const [state, setState] = useState<AppState>({ step: 'idle' })
   const [streams, setStreams] = useState<MediaStreamInfo[]>([])
+  const [probeData, setProbeData] = useState<ProbeData | null>(null)
   const [file, setFile] = useState<File | null>(null)
 
   const handleFile = useCallback(
@@ -32,9 +33,9 @@ export default function App() {
         }
 
         setState({ step: 'probing', fileName: droppedFile.name })
-        const parsed = await probe(droppedFile)
+        const result = await probe(droppedFile)
 
-        if (parsed.length === 0) {
+        if (result.streams.length === 0) {
           if (typeof pendo !== 'undefined') {
             pendo.track('video_probe_failed', {
               fileName: droppedFile.name,
@@ -47,9 +48,9 @@ export default function App() {
           return
         }
 
-        const videoCount = parsed.filter((s) => s.codec_type === 'video').length
-        const audioCount = parsed.filter((s) => s.codec_type === 'audio').length
-        const subtitleCount = parsed.filter((s) => s.codec_type === 'subtitle').length
+        const videoCount = result.streams.filter((s) => s.codec_type === 'video').length
+        const audioCount = result.streams.filter((s) => s.codec_type === 'audio').length
+        const subtitleCount = result.streams.filter((s) => s.codec_type === 'subtitle').length
 
         if (typeof pendo !== 'undefined') {
           pendo.track('video_probe_completed', {
@@ -58,13 +59,16 @@ export default function App() {
             videoTrackCount: videoCount,
             audioTrackCount: audioCount,
             subtitleTrackCount: subtitleCount,
-            totalStreamCount: parsed.length,
-            codecs: parsed.map((s) => s.codec_name).join(','),
+            totalStreamCount: result.streams.length,
+            codecs: result.streams.map((s) => s.codec_name).join(','),
+            duration: result.duration,
+            containerFormat: result.containerFormat,
           })
         }
 
-        setStreams(parsed)
-        setState({ step: 'selecting', fileName: droppedFile.name, streams: parsed })
+        setProbeData(result)
+        setStreams(result.streams)
+        setState({ step: 'selecting', fileName: droppedFile.name, streams: result.streams })
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to analyze file'
         if (typeof pendo !== 'undefined') {
@@ -176,6 +180,7 @@ export default function App() {
     }
     setState({ step: 'idle' })
     setStreams([])
+    setProbeData(null)
     setFile(null)
   }, [state])
 
@@ -222,11 +227,32 @@ export default function App() {
           {/* Selecting */}
           {state.step === 'selecting' && (
             <div className="flex flex-col gap-8">
-              <div className="text-center">
-                <p className="text-[var(--muted-foreground)] text-sm mb-1">
-                  Editing
-                </p>
-                <p className="text-lg font-medium">{state.fileName}</p>
+              {/* File Info Bar */}
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+                <p className="text-sm font-medium truncate mb-2">{state.fileName}</p>
+                <div className="flex flex-wrap gap-4 text-xs text-[var(--muted-foreground)]">
+                  {probeData?.fileSize != null && (
+                    <span className="flex items-center gap-1.5">
+                      <HardDrive size={12} />
+                      {formatFileSize(probeData.fileSize)}
+                    </span>
+                  )}
+                  {probeData?.duration && (
+                    <span className="flex items-center gap-1.5">
+                      <Clock size={12} />
+                      {formatDuration(probeData.duration)}
+                    </span>
+                  )}
+                  {probeData?.containerFormat && (
+                    <span className="flex items-center gap-1.5">
+                      <FileVideo size={12} />
+                      {probeData.containerFormat.toUpperCase()}
+                    </span>
+                  )}
+                  <span>
+                    {streams.length} stream{streams.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
               </div>
 
               <TrackSelector streams={streams} onToggle={handleToggle} />
@@ -328,4 +354,20 @@ export default function App() {
       </footer>
     </div>
   )
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`
+  return `${bytes} B`
+}
+
+function formatDuration(hhmmss: string): string {
+  const parts = hhmmss.split(':').map(Number)
+  if (parts.length !== 3) return hhmmss
+  const [h, m, s] = parts
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
 }
