@@ -7,7 +7,9 @@ import { useAuth } from './hooks/useAuth'
 
 pendo.initialize({
   visitor: {
-    id: ''
+    id: '',
+    email: '',
+    full_name: ''
   }
 });
 
