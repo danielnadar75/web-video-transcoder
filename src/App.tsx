@@ -3,7 +3,7 @@ import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo } from 'luci
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
-import { useFFmpeg } from './hooks/useFFmpeg'
+import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS } from './hooks/useFFmpeg'
 import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
 
 export default function App() {
@@ -12,6 +12,7 @@ export default function App() {
   const [streams, setStreams] = useState<MediaStreamInfo[]>([])
   const [probeData, setProbeData] = useState<ProbeData | null>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [outputFormat, setOutputFormat] = useState('mkv')
 
   const handleFile = useCallback(
     async (droppedFile: File, importMethod: string) => {
@@ -68,6 +69,7 @@ export default function App() {
 
         setProbeData(result)
         setStreams(result.streams)
+        setOutputFormat(SUPPORTED_OUTPUT_FORMATS.includes(result.containerFormat) ? result.containerFormat : 'mkv')
         setState({ step: 'selecting', fileName: droppedFile.name, streams: result.streams })
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to analyze file'
@@ -123,7 +125,7 @@ export default function App() {
     try {
       setState({ step: 'processing', fileName: file.name, progress: 0 })
 
-      const url = await remux(file, keptStreams, (progress) => {
+      const url = await remux(file, keptStreams, outputFormat, (progress) => {
         setState((prev) =>
           prev.step === 'processing' ? { ...prev, progress } : prev,
         )
@@ -131,7 +133,7 @@ export default function App() {
 
       setState({ step: 'done', fileName: file.name, outputUrl: url })
 
-      const outputFileName = file.name.replace(/(\.[^.]+)$/, '_cleaned$1')
+      const outputFileName = file.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`)
 
       if (typeof pendo !== 'undefined') {
         pendo.track('remux_completed', {
@@ -166,7 +168,7 @@ export default function App() {
         message: errorMessage,
       })
     }
-  }, [file, streams, remux])
+  }, [file, streams, outputFormat, remux])
 
   const handleReset = useCallback(() => {
     if (typeof pendo !== 'undefined') {
@@ -181,6 +183,7 @@ export default function App() {
     setState({ step: 'idle' })
     setStreams([])
     setProbeData(null)
+    setOutputFormat('mkv')
     setFile(null)
   }, [state])
 
@@ -257,6 +260,25 @@ export default function App() {
 
               <TrackSelector streams={streams} onToggle={handleToggle} />
 
+              {/* Output Format Selector */}
+              <div className="flex items-center justify-center gap-3 text-sm">
+                <label htmlFor="output-format" className="text-[var(--muted-foreground)]">
+                  Output format:
+                </label>
+                <select
+                  id="output-format"
+                  value={outputFormat}
+                  onChange={(e) => setOutputFormat(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                >
+                  {SUPPORTED_OUTPUT_FORMATS.map((fmt) => (
+                    <option key={fmt} value={fmt}>
+                      {fmt.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex items-center justify-center gap-4">
                 <button
                   onClick={handleReset}
@@ -305,12 +327,12 @@ export default function App() {
               <div className="flex gap-3">
                 <a
                   href={state.outputUrl}
-                  download={file?.name.replace(/(\.[^.]+)$/, '_cleaned$1')}
+                  download={file?.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`)}
                   onClick={() => {
                     if (typeof pendo !== 'undefined') {
                       pendo.track('output_file_downloaded', {
                         fileName: file?.name,
-                        outputFileName: file?.name.replace(/(\.[^.]+)$/, '_cleaned$1'),
+                        outputFileName: file?.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`),
                       })
                     }
                   }}

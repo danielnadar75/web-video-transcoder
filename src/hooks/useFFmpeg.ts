@@ -69,13 +69,15 @@ export function useFFmpeg() {
     async (
       file: File,
       keptStreams: MediaStreamInfo[],
+      outputFormat: string,
       onProgress: (ratio: number) => void,
     ): Promise<string> => {
       const ffmpeg = ffmpegRef.current
       if (!ffmpeg) throw new Error('FFmpeg not loaded')
 
       const inputName = 'input' + getExtension(file.name)
-      const outputName = 'output' + getExtension(file.name)
+      const fmt = FORMAT_MAP[outputFormat] ?? FORMAT_MAP['mkv']
+      const outputName = 'output.' + outputFormat
 
       // File may already be written from probe, write again to be safe
       await ffmpeg.writeFile(inputName, await fetchFile(file))
@@ -87,10 +89,10 @@ export function useFFmpeg() {
       // Build map args: -map 0:streamIndex for each kept stream
       const mapArgs = keptStreams.flatMap((s) => ['-map', `0:${s.index}`])
 
-      await ffmpeg.exec(['-i', inputName, ...mapArgs, '-c', 'copy', outputName])
+      await ffmpeg.exec(['-i', inputName, ...mapArgs, '-c', 'copy', '-f', fmt.ffmpegFormat, outputName])
 
       const data = await ffmpeg.readFile(outputName)
-      const blob = new Blob([data as BlobPart], { type: 'video/x-matroska' })
+      const blob = new Blob([data as BlobPart], { type: fmt.mimeType })
       const url = URL.createObjectURL(blob)
 
       // Cleanup
@@ -109,6 +111,17 @@ function getExtension(filename: string): string {
   const dot = filename.lastIndexOf('.')
   return dot >= 0 ? filename.slice(dot) : '.mkv'
 }
+
+const FORMAT_MAP: Record<string, { ffmpegFormat: string; mimeType: string }> = {
+  mp4:  { ffmpegFormat: 'mp4',       mimeType: 'video/mp4' },
+  mkv:  { ffmpegFormat: 'matroska',  mimeType: 'video/x-matroska' },
+  webm: { ffmpegFormat: 'webm',      mimeType: 'video/webm' },
+  mov:  { ffmpegFormat: 'mov',       mimeType: 'video/quicktime' },
+  avi:  { ffmpegFormat: 'avi',       mimeType: 'video/x-msvideo' },
+  ts:   { ffmpegFormat: 'mpegts',    mimeType: 'video/mp2t' },
+}
+
+export const SUPPORTED_OUTPUT_FORMATS = Object.keys(FORMAT_MAP)
 
 function parseDuration(log: string): string | undefined {
   // Duration: 01:23:45.67, start: ...
