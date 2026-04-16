@@ -39,6 +39,14 @@ export interface HistoryEntry {
   removedStreams: number
 }
 
+export interface FeedbackEntry {
+  id: string
+  timestamp: number
+  category: 'bug' | 'feature' | 'general'
+  message: string
+  rating: number // 1-5
+}
+
 export type AppState =
   | { step: 'idle' }
   | { step: 'loading-ffmpeg' }

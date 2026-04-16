@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react'
-import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo, History as HistoryIcon, LogOut } from 'lucide-react'
+import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo, History as HistoryIcon, MessageSquare, LogOut } from 'lucide-react'
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
 import { History } from './features/history/History'
+import { FeedbackPage } from './features/feedback/FeedbackPage'
 import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS, getIncompatibleStreams } from './hooks/useFFmpeg'
 import { useHistory } from './hooks/useHistory'
+import { useFeedback } from './hooks/useFeedback'
 import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
 import type { User } from './hooks/useAuth'
 
@@ -21,8 +23,9 @@ export default function App({ user, onLogout }: AppProps) {
   const [probeData, setProbeData] = useState<ProbeData | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [outputFormat, setOutputFormat] = useState('mkv')
-  const [page, setPage] = useState<'main' | 'history'>('main')
+  const [page, setPage] = useState<'main' | 'history' | 'feedback'>('main')
   const { entries, addEntry, clearHistory } = useHistory()
+  const { entries: feedbackEntries, addEntry: addFeedback, clearFeedback } = useFeedback()
 
   const handleFile = useCallback(
     async (droppedFile: File) => {
@@ -222,6 +225,18 @@ export default function App({ user, onLogout }: AppProps) {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setPage(page === 'feedback' ? 'main' : 'feedback')}
+              disabled={state.step === 'processing'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                page === 'feedback'
+                  ? 'bg-[var(--accent)] text-white'
+                  : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)]'
+              }`}
+            >
+              <MessageSquare size={14} />
+              Feedback
+            </button>
             <span className="text-sm text-[var(--muted-foreground)] hidden sm:inline">{user.name}</span>
             <button
               onClick={onLogout}
@@ -235,9 +250,11 @@ export default function App({ user, onLogout }: AppProps) {
       </header>
 
       {/* Main */}
-      <main className={`flex-1 flex ${page === 'history' ? 'items-start' : 'items-center'} justify-center px-6 py-12`}>
+      <main className={`flex-1 flex ${page === 'main' ? 'items-center' : 'items-start'} justify-center px-6 py-12`}>
         {page === 'history' ? (
           <History entries={entries} onClear={clearHistory} />
+        ) : page === 'feedback' ? (
+          <FeedbackPage entries={feedbackEntries} onSubmit={addFeedback} onClear={clearFeedback} />
         ) : (
         <div className="w-full max-w-4xl">
           {/* Idle: Drop Zone + Sample Cards */}
