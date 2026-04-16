@@ -36,6 +36,19 @@ export default function App() {
         setStreams(result.streams)
         setOutputFormat(SUPPORTED_OUTPUT_FORMATS.includes(result.containerFormat) ? result.containerFormat : 'mkv')
         setState({ step: 'selecting', fileName: droppedFile.name, streams: result.streams })
+
+        pendo.track("file_analysis_completed", {
+          fileName: droppedFile.name,
+          fileSize: droppedFile.size,
+          containerFormat: result.containerFormat,
+          duration: result.duration || "",
+          totalStreamCount: result.streams.length,
+          videoStreamCount: result.streams.filter((s) => s.codec_type === "video").length,
+          audioStreamCount: result.streams.filter((s) => s.codec_type === "audio").length,
+          subtitleStreamCount: result.streams.filter((s) => s.codec_type === "subtitle").length,
+          detectedCodecs: [...new Set(result.streams.map((s) => s.codec_name))].join(", "),
+          detectedLanguages: [...new Set(result.streams.map((s) => s.tags.language).filter(Boolean))].join(", "),
+        })
       } catch (err) {
         setState({
           step: 'error',
@@ -58,6 +71,24 @@ export default function App() {
     const keptStreams = streams.filter((s) => s.kept)
     if (keptStreams.length === 0) return
 
+    const removedStreams = streams.filter((s) => !s.kept)
+
+    pendo.track("remux_started", {
+      fileName: file.name,
+      fileSize: file.size,
+      outputFormat,
+      totalStreamCount: streams.length,
+      keptStreamCount: keptStreams.length,
+      removedStreamCount: removedStreams.length,
+      removedStreamTypes: [...new Set(removedStreams.map((s) => s.codec_type))].join(", "),
+      keptVideoStreams: keptStreams.filter((s) => s.codec_type === "video").length,
+      keptAudioStreams: keptStreams.filter((s) => s.codec_type === "audio").length,
+      keptSubtitleStreams: keptStreams.filter((s) => s.codec_type === "subtitle").length,
+      removedVideoStreams: removedStreams.filter((s) => s.codec_type === "video").length,
+      removedAudioStreams: removedStreams.filter((s) => s.codec_type === "audio").length,
+      removedSubtitleStreams: removedStreams.filter((s) => s.codec_type === "subtitle").length,
+    })
+
     try {
       setState({ step: 'processing', fileName: file.name, progress: 0 })
 
@@ -70,6 +101,15 @@ export default function App() {
       setState({ step: 'done', fileName: file.name, outputUrl: url })
 
       const outputFileName = file.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`)
+
+      pendo.track("remux_completed", {
+        fileName: file.name,
+        fileSize: file.size,
+        outputFormat,
+        outputFileName,
+        keptStreamCount: keptStreams.length,
+        removedStreamCount: removedStreams.length,
+      })
 
       // Auto-download
       const a = document.createElement('a')
