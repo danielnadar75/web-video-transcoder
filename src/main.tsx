@@ -5,14 +5,15 @@ import App from './App'
 import { LoginPage } from './features/auth/LoginPage'
 import { useAuth } from './hooks/useAuth'
 
-pendo.initialize({
-  visitor: {
-    id: ''
-  }
-});
-
 function Root() {
   const { user, login, logout } = useAuth()
+
+  pendo.initialize({
+    visitor: {
+      id: user?.email ?? '',
+      name: user?.name ?? '',
+    }
+  });
 
   if (!user) {
     return <LoginPage onLogin={login} />
