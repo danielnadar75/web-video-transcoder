@@ -191,7 +191,7 @@ export default function App() {
       {/* Header */}
       <header className="border-b border-[var(--border)] px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <button onClick={() => { setPage('main'); if (state.step === 'done' || state.step === 'error') handleReset(); }} className="flex items-center gap-3 cursor-pointer">
+          <button onClick={() => setPage('main')} className="flex items-center gap-3 cursor-pointer">
             <Scissors size={24} className="text-[var(--accent)]" />
             <h1 className="text-xl font-bold tracking-tight">StreamShed</h1>
           </button>
@@ -201,7 +201,8 @@ export default function App() {
           <div className="ml-auto">
             <button
               onClick={() => setPage(page === 'history' ? 'main' : 'history')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer ${
+              disabled={state.step === 'processing'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                 page === 'history'
                   ? 'bg-[var(--accent)] text-white'
                   : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)]'

@@ -23,7 +23,7 @@ export function History({ entries, onClear }: HistoryProps) {
           {entries.length} file{entries.length !== 1 ? 's' : ''} processed
         </p>
         <button
-          onClick={onClear}
+          onClick={() => { if (window.confirm('Clear all processing history?')) onClear() }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[var(--muted-foreground)] hover:text-red-400 border border-[var(--border)] hover:border-red-400/50 transition-colors cursor-pointer"
         >
           <Trash2 size={12} />
