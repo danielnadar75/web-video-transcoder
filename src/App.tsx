@@ -1,16 +1,18 @@
 import { useCallback, useState } from 'react'
-import { Scissors, Download, RotateCcw } from 'lucide-react'
+import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo } from 'lucide-react'
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
-import { useFFmpeg } from './hooks/useFFmpeg'
-import type { AppState, MediaStreamInfo } from './types/media'
+import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS, getIncompatibleStreams } from './hooks/useFFmpeg'
+import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
 
 export default function App() {
   const { load, loaded, loading, probe, remux } = useFFmpeg()
   const [state, setState] = useState<AppState>({ step: 'idle' })
   const [streams, setStreams] = useState<MediaStreamInfo[]>([])
+  const [probeData, setProbeData] = useState<ProbeData | null>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [outputFormat, setOutputFormat] = useState('mkv')
 
   const handleFile = useCallback(
     async (droppedFile: File) => {
@@ -35,23 +37,23 @@ export default function App() {
         }
 
         setState({ step: 'probing', fileName: droppedFile.name })
-        const parsed = await probe(droppedFile)
+        const result = await probe(droppedFile)
 
-        if (parsed.length === 0) {
+        if (result.streams.length === 0) {
           setState({ step: 'error', message: 'No streams found in this file. Is it a valid video?' })
           return
         }
 
-        const videoStreamCount = parsed.filter((s) => s.codec_type === 'video').length
-        const audioStreamCount = parsed.filter((s) => s.codec_type === 'audio').length
-        const subtitleStreamCount = parsed.filter((s) => s.codec_type === 'subtitle').length
-        const detectedCodecs = [...new Set(parsed.map((s) => s.codec_name))].join(', ')
-        const detectedLanguages = [...new Set(parsed.map((s) => s.tags.language).filter(Boolean))].join(', ')
+        const videoStreamCount = result.streams.filter((s) => s.codec_type === 'video').length
+        const audioStreamCount = result.streams.filter((s) => s.codec_type === 'audio').length
+        const subtitleStreamCount = result.streams.filter((s) => s.codec_type === 'subtitle').length
+        const detectedCodecs = [...new Set(result.streams.map((s) => s.codec_name))].join(', ')
+        const detectedLanguages = [...new Set(result.streams.map((s) => s.tags.language).filter(Boolean))].join(', ')
 
         pendo.track("file_analysis_completed", {
           fileName: droppedFile.name,
           fileSize: droppedFile.size,
-          totalStreamCount: parsed.length,
+          totalStreamCount: result.streams.length,
           videoStreamCount,
           audioStreamCount,
           subtitleStreamCount,
@@ -59,8 +61,10 @@ export default function App() {
           detectedLanguages,
         })
 
-        setStreams(parsed)
-        setState({ step: 'selecting', fileName: droppedFile.name, streams: parsed })
+        setProbeData(result)
+        setStreams(result.streams)
+        setOutputFormat(SUPPORTED_OUTPUT_FORMATS.includes(result.containerFormat) ? result.containerFormat : 'mkv')
+        setState({ step: 'selecting', fileName: droppedFile.name, streams: result.streams })
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to analyze file'
         pendo.track("processing_error", {
@@ -112,27 +116,24 @@ export default function App() {
     try {
       setState({ step: 'processing', fileName: file.name, progress: 0 })
 
-      const url = await remux(file, keptStreams, (progress) => {
+      const url = await remux(file, keptStreams, outputFormat, (progress) => {
         setState((prev) =>
           prev.step === 'processing' ? { ...prev, progress } : prev,
         )
       })
 
-      const fileExtension = file.name.includes('.')
-        ? file.name.split('.').pop()?.toLowerCase() ?? ''
-        : ''
-      const outputFileName = file.name.replace(/(\.[^.]+)$/, '_cleaned$1')
+      setState({ step: 'done', fileName: file.name, outputUrl: url })
+
+      const outputFileName = file.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`)
 
       pendo.track("remux_completed", {
         fileName: file.name,
         fileSize: file.size,
         outputFileName,
+        outputFormat,
         keptStreamCount: keptStreams.length,
         removedStreamCount: removedStreams.length,
-        fileExtension,
       })
-
-      setState({ step: 'done', fileName: file.name, outputUrl: url })
 
       // Auto-download
       const a = document.createElement('a')
@@ -153,7 +154,7 @@ export default function App() {
         message: errorMessage,
       })
     }
-  }, [file, streams, remux])
+  }, [file, streams, outputFormat, remux])
 
   const handleReset = useCallback(() => {
     if (state.step === 'done' && 'outputUrl' in state) {
@@ -161,11 +162,14 @@ export default function App() {
     }
     setState({ step: 'idle' })
     setStreams([])
+    setProbeData(null)
+    setOutputFormat('mkv')
     setFile(null)
   }, [state])
 
   const keptCount = streams.filter((s) => s.kept).length
   const removedCount = streams.length - keptCount
+  const incompatible = getIncompatibleStreams(streams, outputFormat)
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -207,14 +211,72 @@ export default function App() {
           {/* Selecting */}
           {state.step === 'selecting' && (
             <div className="flex flex-col gap-8">
-              <div className="text-center">
-                <p className="text-[var(--muted-foreground)] text-sm mb-1">
-                  Editing
-                </p>
-                <p className="text-lg font-medium">{state.fileName}</p>
+              {/* File Info Bar */}
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+                <p className="text-sm font-medium truncate mb-2">{state.fileName}</p>
+                <div className="flex flex-wrap gap-4 text-xs text-[var(--muted-foreground)]">
+                  {probeData?.fileSize != null && (
+                    <span className="flex items-center gap-1.5">
+                      <HardDrive size={12} />
+                      {formatFileSize(probeData.fileSize)}
+                    </span>
+                  )}
+                  {probeData?.duration && (
+                    <span className="flex items-center gap-1.5">
+                      <Clock size={12} />
+                      {formatDuration(probeData.duration)}
+                    </span>
+                  )}
+                  {probeData?.containerFormat && (
+                    <span className="flex items-center gap-1.5">
+                      <FileVideo size={12} />
+                      {probeData.containerFormat.toUpperCase()}
+                    </span>
+                  )}
+                  <span>
+                    {streams.length} stream{streams.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
               </div>
 
               <TrackSelector streams={streams} onToggle={handleToggle} />
+
+              {/* Output Format Selector */}
+              <div className="flex items-center justify-center gap-3 text-sm">
+                <label htmlFor="output-format" className="text-[var(--muted-foreground)]">
+                  Output format:
+                </label>
+                <select
+                  id="output-format"
+                  value={outputFormat}
+                  onChange={(e) => setOutputFormat(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                >
+                  {SUPPORTED_OUTPUT_FORMATS.map((fmt) => (
+                    <option key={fmt} value={fmt}>
+                      {fmt.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {incompatible.length > 0 && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+                  <p className="font-medium mb-1">Incompatible streams for {outputFormat.toUpperCase()}:</p>
+                  <ul className="list-disc list-inside text-xs space-y-0.5">
+                    {incompatible.map((s) => (
+                      <li key={s.index}>
+                        Stream #{s.index} — {s.codec_name} ({s.codec_type})
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs mt-2 text-amber-400">
+                    {outputFormat === 'mkv'
+                      ? 'Turn off these streams using the toggles above — no supported format accepts them.'
+                      : 'Turn off these streams using the toggles above, or switch to MKV for full compatibility.'}
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center justify-center gap-4">
                 <button
@@ -225,7 +287,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={handleRemux}
-                  disabled={keptCount === 0}
+                  disabled={keptCount === 0 || incompatible.length > 0}
                   className="px-6 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
                 >
                   <Scissors size={16} />
@@ -264,7 +326,7 @@ export default function App() {
               <div className="flex gap-3">
                 <a
                   href={state.outputUrl}
-                  download={file?.name.replace(/(\.[^.]+)$/, '_cleaned$1')}
+                  download={file?.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`)}
                   className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
                 >
                   <Download size={16} />
@@ -305,4 +367,20 @@ export default function App() {
       </footer>
     </div>
   )
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`
+  return `${bytes} B`
+}
+
+function formatDuration(hhmmss: string): string {
+  const parts = hhmmss.split(':').map(Number)
+  if (parts.length !== 3) return hhmmss
+  const [h, m, s] = parts
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
 }
