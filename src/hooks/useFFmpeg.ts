@@ -52,7 +52,7 @@ export function useFFmpeg() {
       streams: parseStreams(fullLog),
       duration: parseDuration(fullLog),
       fileSize: file.size,
-      containerFormat: ext || 'mkv',
+      containerFormat: parseContainerFormat(fullLog) || ext || 'mkv',
     }
   }, [])
 
@@ -120,6 +120,40 @@ function parseDuration(log: string): string | undefined {
   if (!m) return undefined
   // Strip fractional seconds: "01:23:45.67" -> "01:23:45"
   return m[1].replace(/\.\d+$/, '')
+}
+
+// Maps FFmpeg's internal format names to our format keys
+const FFMPEG_FORMAT_ALIASES: Record<string, string> = {
+  matroska: 'mkv',
+  webm: 'webm',
+  mov: 'mov',
+  mp4: 'mp4',
+  avi: 'avi',
+  mpegts: 'ts',
+}
+
+function parseContainerFormat(log: string): string | undefined {
+  // FFmpeg logs: "Input #0, matroska,webm, from 'input.mkv':"
+  const m = log.match(/Input #0,\s*([^,]+)/)
+  if (!m) return undefined
+  const ffmpegName = m[1].trim().toLowerCase()
+  return FFMPEG_FORMAT_ALIASES[ffmpegName] ?? ffmpegName
+}
+
+// Codec-container compatibility matrix
+const CODEC_COMPAT: Record<string, Set<string>> = {
+  mp4:  new Set(['h264', 'hevc', 'h265', 'av1', 'mpeg4', 'aac', 'mp3', 'ac3', 'eac3', 'opus', 'flac', 'mov_text']),
+  mkv:  new Set(['h264', 'hevc', 'h265', 'av1', 'vp8', 'vp9', 'mpeg4', 'aac', 'mp3', 'ac3', 'eac3', 'opus', 'flac', 'vorbis', 'pcm_s16le', 'pcm_s24le', 'subrip', 'srt', 'ass', 'ssa', 'hdmv_pgs_subtitle', 'dvd_subtitle']),
+  webm: new Set(['vp8', 'vp9', 'av1', 'opus', 'vorbis']),
+  mov:  new Set(['h264', 'hevc', 'h265', 'av1', 'mpeg4', 'prores', 'aac', 'mp3', 'ac3', 'eac3', 'pcm_s16le', 'pcm_s24le', 'mov_text']),
+  avi:  new Set(['h264', 'mpeg4', 'mjpeg', 'mp3', 'aac', 'ac3', 'pcm_s16le']),
+  ts:   new Set(['h264', 'hevc', 'h265', 'mpeg2video', 'aac', 'mp3', 'ac3', 'eac3']),
+}
+
+export function getIncompatibleStreams(streams: MediaStreamInfo[], format: string): MediaStreamInfo[] {
+  const allowed = CODEC_COMPAT[format]
+  if (!allowed) return [] // unknown format, allow everything
+  return streams.filter((s) => s.kept && !allowed.has(s.codec_name.toLowerCase()))
 }
 
 function parseStreams(log: string): MediaStreamInfo[] {

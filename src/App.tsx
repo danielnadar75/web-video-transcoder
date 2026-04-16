@@ -3,7 +3,7 @@ import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo } from 'luci
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
-import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS } from './hooks/useFFmpeg'
+import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS, getIncompatibleStreams } from './hooks/useFFmpeg'
 import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
 
 export default function App() {
@@ -169,6 +169,7 @@ export default function App() {
 
   const keptCount = streams.filter((s) => s.kept).length
   const removedCount = streams.length - keptCount
+  const incompatible = getIncompatibleStreams(streams, outputFormat)
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -259,6 +260,22 @@ export default function App() {
                 </select>
               </div>
 
+              {incompatible.length > 0 && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+                  <p className="font-medium mb-1">Incompatible streams for {outputFormat.toUpperCase()}:</p>
+                  <ul className="list-disc list-inside text-xs space-y-0.5">
+                    {incompatible.map((s) => (
+                      <li key={s.index}>
+                        Stream #{s.index} — {s.codec_name} ({s.codec_type})
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs mt-2 text-amber-400">
+                    Remove these streams or switch to MKV for full compatibility.
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center justify-center gap-4">
                 <button
                   onClick={handleReset}
@@ -268,7 +285,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={handleRemux}
-                  disabled={keptCount === 0}
+                  disabled={keptCount === 0 || incompatible.length > 0}
                   className="px-6 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
                 >
                   <Scissors size={16} />
