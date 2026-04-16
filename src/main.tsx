@@ -2,7 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-// import Playground from './Playground'
+import { LoginPage } from './features/auth/LoginPage'
+import { useAuth } from './hooks/useAuth'
 
 pendo.initialize({
   visitor: {
@@ -10,9 +11,18 @@ pendo.initialize({
   }
 });
 
+function Root() {
+  const { user, login, logout } = useAuth()
+
+  if (!user) {
+    return <LoginPage onLogin={login} />
+  }
+
+  return <App user={user} onLogout={logout} />
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    {/* <Playground /> */}
+    <Root />
   </StrictMode>,
 )
