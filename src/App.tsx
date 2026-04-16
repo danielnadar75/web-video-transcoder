@@ -271,7 +271,9 @@ export default function App() {
                     ))}
                   </ul>
                   <p className="text-xs mt-2 text-amber-400">
-                    Remove these streams or switch to MKV for full compatibility.
+                    {outputFormat === 'mkv'
+                      ? 'Turn off these streams using the toggles above — no supported format accepts them.'
+                      : 'Turn off these streams using the toggles above, or switch to MKV for full compatibility.'}
                   </p>
                 </div>
               )}
