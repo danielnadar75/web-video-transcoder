@@ -26,6 +26,19 @@ export interface ProbeData {
   containerFormat: string    // e.g. "mp4", "mkv"
 }
 
+export interface HistoryEntry {
+  id: string
+  timestamp: number
+  inputFileName: string
+  inputFileSize: number
+  inputFormat: string
+  outputFormat: string
+  duration?: string
+  totalStreams: number
+  keptStreams: number
+  removedStreams: number
+}
+
 export type AppState =
   | { step: 'idle' }
   | { step: 'loading-ffmpeg' }

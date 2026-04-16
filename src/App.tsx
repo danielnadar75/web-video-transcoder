@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react'
-import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo } from 'lucide-react'
+import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo, History as HistoryIcon } from 'lucide-react'
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
+import { History } from './features/history/History'
 import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS, getIncompatibleStreams } from './hooks/useFFmpeg'
+import { useHistory } from './hooks/useHistory'
 import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
 
 export default function App() {
@@ -13,6 +15,8 @@ export default function App() {
   const [probeData, setProbeData] = useState<ProbeData | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [outputFormat, setOutputFormat] = useState('mkv')
+  const [page, setPage] = useState<'main' | 'history'>('main')
+  const { entries, addEntry, clearHistory } = useHistory()
 
   const handleFile = useCallback(
     async (droppedFile: File) => {
@@ -124,6 +128,17 @@ export default function App() {
 
       setState({ step: 'done', fileName: file.name, outputUrl: url })
 
+      addEntry({
+        inputFileName: file.name,
+        inputFileSize: file.size,
+        inputFormat: probeData?.containerFormat || 'unknown',
+        outputFormat,
+        duration: probeData?.duration,
+        totalStreams: streams.length,
+        keptStreams: keptStreams.length,
+        removedStreams: removedStreams.length,
+      })
+
       const outputFileName = file.name.replace(/\.[^.]+$/, `_cleaned.${outputFormat}`)
 
       pendo.track("remux_completed", {
@@ -176,16 +191,40 @@ export default function App() {
       {/* Header */}
       <header className="border-b border-[var(--border)] px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <Scissors size={24} className="text-[var(--accent)]" />
-          <h1 className="text-xl font-bold tracking-tight">StreamShed</h1>
-          <span className="text-xs text-[var(--muted-foreground)] ml-1">
+          <button onClick={() => setPage('main')} className="flex items-center gap-3 cursor-pointer">
+            <Scissors size={24} className="text-[var(--accent)]" />
+            <h1 className="text-xl font-bold tracking-tight">StreamShed</h1>
+          </button>
+          <span className="text-xs text-[var(--muted-foreground)] ml-1 hidden sm:inline">
             Clean up video tracks — entirely in your browser
           </span>
+          <div className="ml-auto">
+            <button
+              onClick={() => setPage(page === 'history' ? 'main' : 'history')}
+              disabled={state.step === 'processing'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                page === 'history'
+                  ? 'bg-[var(--accent)] text-white'
+                  : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)]'
+              }`}
+            >
+              <HistoryIcon size={14} />
+              History
+              {entries.length > 0 && (
+                <span className={`text-xs ${page === 'history' ? 'opacity-75' : 'text-[var(--muted-foreground)]'}`}>
+                  ({entries.length})
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main */}
-      <main className="flex-1 flex items-center justify-center px-6 py-12">
+      <main className={`flex-1 flex ${page === 'history' ? 'items-start' : 'items-center'} justify-center px-6 py-12`}>
+        {page === 'history' ? (
+          <History entries={entries} onClear={clearHistory} />
+        ) : (
         <div className="w-full max-w-4xl">
           {/* Idle: Drop Zone */}
           {state.step === 'idle' && (
@@ -359,6 +398,7 @@ export default function App() {
             </div>
           )}
         </div>
+        )}
       </main>
 
       {/* Footer */}
