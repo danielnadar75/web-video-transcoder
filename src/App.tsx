@@ -17,6 +17,18 @@ export default function App() {
       try {
         setFile(droppedFile)
 
+        const fileExtension = droppedFile.name.includes('.')
+          ? droppedFile.name.split('.').pop()?.toLowerCase() ?? ''
+          : ''
+
+        pendo.track("video_file_imported", {
+          fileName: droppedFile.name,
+          fileSize: droppedFile.size,
+          fileType: droppedFile.type,
+          fileExtension,
+          importMethod: "drop_or_browse",
+        })
+
         if (!loaded) {
           setState({ step: 'loading-ffmpeg' })
           await load()
@@ -30,12 +42,37 @@ export default function App() {
           return
         }
 
+        const videoStreamCount = parsed.filter((s) => s.codec_type === 'video').length
+        const audioStreamCount = parsed.filter((s) => s.codec_type === 'audio').length
+        const subtitleStreamCount = parsed.filter((s) => s.codec_type === 'subtitle').length
+        const detectedCodecs = [...new Set(parsed.map((s) => s.codec_name))].join(', ')
+        const detectedLanguages = [...new Set(parsed.map((s) => s.tags.language).filter(Boolean))].join(', ')
+
+        pendo.track("file_analysis_completed", {
+          fileName: droppedFile.name,
+          fileSize: droppedFile.size,
+          totalStreamCount: parsed.length,
+          videoStreamCount,
+          audioStreamCount,
+          subtitleStreamCount,
+          detectedCodecs,
+          detectedLanguages,
+        })
+
         setStreams(parsed)
         setState({ step: 'selecting', fileName: droppedFile.name, streams: parsed })
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to analyze file'
+        pendo.track("processing_error", {
+          errorMessage,
+          errorStep: "file_analysis",
+          fileName: droppedFile.name,
+          fileSize: droppedFile.size,
+          fileType: droppedFile.type,
+        })
         setState({
           step: 'error',
-          message: err instanceof Error ? err.message : 'Failed to analyze file',
+          message: errorMessage,
         })
       }
     },
@@ -54,6 +91,24 @@ export default function App() {
     const keptStreams = streams.filter((s) => s.kept)
     if (keptStreams.length === 0) return
 
+    const removedStreams = streams.filter((s) => !s.kept)
+    const removedStreamTypes = [...new Set(removedStreams.map((s) => s.codec_type))].join(', ')
+
+    pendo.track("remux_started", {
+      fileName: file.name,
+      fileSize: file.size,
+      totalStreamCount: streams.length,
+      keptStreamCount: keptStreams.length,
+      removedStreamCount: removedStreams.length,
+      removedStreamTypes,
+      keptVideoStreams: keptStreams.filter((s) => s.codec_type === 'video').length,
+      keptAudioStreams: keptStreams.filter((s) => s.codec_type === 'audio').length,
+      keptSubtitleStreams: keptStreams.filter((s) => s.codec_type === 'subtitle').length,
+      removedVideoStreams: removedStreams.filter((s) => s.codec_type === 'video').length,
+      removedAudioStreams: removedStreams.filter((s) => s.codec_type === 'audio').length,
+      removedSubtitleStreams: removedStreams.filter((s) => s.codec_type === 'subtitle').length,
+    })
+
     try {
       setState({ step: 'processing', fileName: file.name, progress: 0 })
 
@@ -63,17 +118,39 @@ export default function App() {
         )
       })
 
+      const fileExtension = file.name.includes('.')
+        ? file.name.split('.').pop()?.toLowerCase() ?? ''
+        : ''
+      const outputFileName = file.name.replace(/(\.[^.]+)$/, '_cleaned$1')
+
+      pendo.track("remux_completed", {
+        fileName: file.name,
+        fileSize: file.size,
+        outputFileName,
+        keptStreamCount: keptStreams.length,
+        removedStreamCount: removedStreams.length,
+        fileExtension,
+      })
+
       setState({ step: 'done', fileName: file.name, outputUrl: url })
 
       // Auto-download
       const a = document.createElement('a')
       a.href = url
-      a.download = file.name.replace(/(\.[^.]+)$/, '_cleaned$1')
+      a.download = outputFileName
       a.click()
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Remux failed'
+      pendo.track("processing_error", {
+        errorMessage,
+        errorStep: "remux",
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+      })
       setState({
         step: 'error',
-        message: err instanceof Error ? err.message : 'Remux failed',
+        message: errorMessage,
       })
     }
   }, [file, streams, remux])
