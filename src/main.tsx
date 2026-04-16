@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
@@ -13,6 +13,18 @@ pendo.initialize({
 
 function Root() {
   const { user, login, logout } = useAuth()
+
+  useEffect(() => {
+    if (user) {
+      pendo.identify({
+        visitor: {
+          id: user.email,
+          email: user.email,
+          full_name: user.name
+        }
+      });
+    }
+  }, [user]);
 
   if (!user) {
     return <LoginPage onLogin={login} />
