@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo, History as HistoryIcon } from 'lucide-react'
+import { Scissors, Download, RotateCcw, Clock, HardDrive, FileVideo, History as HistoryIcon, LogOut } from 'lucide-react'
 import { DropZone } from './features/dropzone/DropZone'
 import { TrackSelector } from './features/track-selector/TrackSelector'
 import { ProcessingCard } from './features/processing/ProcessingCard'
@@ -7,8 +7,14 @@ import { History } from './features/history/History'
 import { useFFmpeg, SUPPORTED_OUTPUT_FORMATS, getIncompatibleStreams } from './hooks/useFFmpeg'
 import { useHistory } from './hooks/useHistory'
 import type { AppState, MediaStreamInfo, ProbeData } from './types/media'
+import type { User } from './hooks/useAuth'
 
-export default function App() {
+interface AppProps {
+  user: User
+  onLogout: () => void
+}
+
+export default function App({ user, onLogout }: AppProps) {
   const { load, loaded, loading, probe, remux } = useFFmpeg()
   const [state, setState] = useState<AppState>({ step: 'idle' })
   const [streams, setStreams] = useState<MediaStreamInfo[]>([])
@@ -198,7 +204,7 @@ export default function App() {
           <span className="text-xs text-[var(--muted-foreground)] ml-1 hidden sm:inline">
             Clean up video tracks — entirely in your browser
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
             <button
               onClick={() => setPage(page === 'history' ? 'main' : 'history')}
               disabled={state.step === 'processing'}
@@ -216,6 +222,14 @@ export default function App() {
                 </span>
               )}
             </button>
+            <span className="text-sm text-[var(--muted-foreground)] hidden sm:inline">{user.name}</span>
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] transition-colors cursor-pointer"
+            >
+              <LogOut size={12} />
+              Sign Out
+            </button>
           </div>
         </div>
       </header>
@@ -226,9 +240,31 @@ export default function App() {
           <History entries={entries} onClear={clearHistory} />
         ) : (
         <div className="w-full max-w-4xl">
-          {/* Idle: Drop Zone */}
+          {/* Idle: Drop Zone + Sample Cards */}
           {state.step === 'idle' && (
-            <DropZone onFile={handleFile} disabled={loading} />
+            <div className="flex flex-col gap-10">
+              <DropZone onFile={handleFile} disabled={loading} />
+
+              <div>
+                <p className="text-sm text-[var(--muted-foreground)] text-center mb-4">
+                  Common use cases
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {SAMPLE_CARDS.map((card) => (
+                    <div
+                      key={card.title}
+                      className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--muted-foreground)] transition-colors"
+                    >
+                      <p className="text-2xl mb-2">{card.icon}</p>
+                      <p className="text-sm font-medium mb-1">{card.title}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">
+                        {card.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Loading FFmpeg */}
@@ -408,6 +444,24 @@ export default function App() {
     </div>
   )
 }
+
+const SAMPLE_CARDS = [
+  {
+    icon: '🎧',
+    title: 'Strip extra audio',
+    description: 'Remove commentary tracks or foreign dubs you don\'t need. Keep just your preferred language.',
+  },
+  {
+    icon: '💬',
+    title: 'Remove subtitles',
+    description: 'Drop embedded subtitle tracks to reduce file size without re-encoding the video.',
+  },
+  {
+    icon: '📦',
+    title: 'Change container',
+    description: 'Remux from MKV to MP4 or vice versa — instant conversion with no quality loss.',
+  },
+]
 
 function formatFileSize(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
