@@ -18,6 +18,49 @@ function StreamIcon({ type }: { type: MediaStreamInfo['codec_type'] }) {
   }
 }
 
+function StreamDetails({ stream }: { stream: MediaStreamInfo }) {
+  const chips: string[] = []
+
+  if (stream.codec_type === 'video') {
+    if (stream.width && stream.height) chips.push(`${stream.width}x${stream.height}`)
+    if (stream.frameRate) chips.push(`${stream.frameRate} fps`)
+    if (stream.bitrate) chips.push(formatBitrate(stream.bitrate))
+  } else if (stream.codec_type === 'audio') {
+    if (stream.channels) chips.push(formatChannels(stream.channels))
+    if (stream.sampleRate) chips.push(`${stream.sampleRate / 1000}kHz`)
+    if (stream.bitrate) chips.push(formatBitrate(stream.bitrate))
+  }
+
+  if (chips.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--muted)] text-[var(--muted-foreground)]"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function formatBitrate(kbps: number): string {
+  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${kbps} kbps`
+}
+
+function formatChannels(ch: string): string {
+  switch (ch) {
+    case 'mono': return 'Mono'
+    case 'stereo': return 'Stereo'
+    case '5.1': case '5.1(side)': return '5.1 Surround'
+    case '7.1': return '7.1 Surround'
+    default: return ch
+  }
+}
+
 function TrackCard({
   stream,
   onToggle,
@@ -46,6 +89,7 @@ function TrackCard({
             {stream.tags.language?.toUpperCase() || 'UND'} &middot;{' '}
             {stream.codec_name}
           </p>
+          <StreamDetails stream={stream} />
         </div>
       </div>
       <Switch checked={stream.kept} onCheckedChange={onToggle} />

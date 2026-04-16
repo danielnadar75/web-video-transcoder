@@ -6,15 +6,24 @@ export interface MediaStreamInfo {
     language?: string
     title?: string
   }
-  channels?: number
-  sample_rate?: string
+  // Video
   width?: number
   height?: number
+  frameRate?: string
+  profile?: string
+  // Audio
+  channels?: string
+  sampleRate?: number
+  // Shared
+  bitrate?: number // kbps
   kept: boolean
 }
 
-export interface ProbeResult {
+export interface ProbeData {
   streams: MediaStreamInfo[]
+  duration?: string          // e.g. "01:23:45"
+  fileSize: number           // bytes
+  containerFormat: string    // e.g. "mp4", "mkv"
 }
 
 export type AppState =
